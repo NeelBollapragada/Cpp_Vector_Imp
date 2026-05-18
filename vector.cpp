@@ -1,14 +1,31 @@
 #include <iostream>
 #include <memory>
+#include <utility>
 
 constexpr size_t INIT_CAP{64};
+
+class A {
+private:
+	int x{};
+	double y{};
+
+public:
+	A(int a, double b)
+		: x{a}, y{b}
+	{ std:: cout << "A constructed\n"; };
+
+	void print() const {
+		std::cout << "print " << x << " " << y << '\n';
+	}
+};
 
 template <typename T>
 class Vector {
 private:
 	size_t size{};
 	size_t capacity{};
-	std::unique_ptr<T[]> ptr{ nullptr };
+	std::allocator<T> alloc;
+	T* ptr{ nullptr };
 
 public:
 	Vector() = default;
@@ -22,13 +39,13 @@ public:
 	}
 
 	Vector(Vector&& v)
-		: size{v.size}, capacity{v.capacity}, ptr{std::move(v.ptr)}
+		: size{v.size}, capacity{v.capacity}, ptr{v.ptr}
 	{}
 
 	void operator=(Vector&& v) {
 		size = v.size;
 		capacity = v.capacity;
-		ptr = std::move(v.ptr);
+		ptr = v.ptr;
 	}
 
 	Vector(int s) {
@@ -37,17 +54,35 @@ public:
 
 		if (s > 0) {
 			capacity = s;
-			ptr = std::make_unique<T[]>(s);
+			ptr = alloc.allocate(s);
+		}
+	}
+
+	Vector(std::initializer_list<T> init_list) 
+		: capacity{init_list.size()}, size{init_list.size()}
+	{
+		ptr = alloc.allocate(capacity);
+		size_t i{};
+		for (auto p{init_list.begin()}; p != init_list.end(); ++p) {
+			std::construct_at(ptr + i++, *p);
 		}
 	}
 
 	void push(const T& obj) {
 		if (size == capacity) {
-			std::cout << "here\n";
 			resize_inc();
 		}
 
-		ptr[size] = obj;
+		std::construct_at(ptr + size, obj);
+		++size;
+	}
+
+	void push(T&& obj) {
+		if (size == capacity) {
+			resize_inc();
+		}
+
+		std::construct_at(ptr + size, std::move(obj));
 		++size;
 	}
 
@@ -61,7 +96,21 @@ public:
 			resize_dec();
 		}
 
-		return ptr[size];
+		T ret_elem = ptr[size];
+
+		std::destroy_at(ptr + size);
+
+		return ret_elem;
+	}
+
+	template <typename... Args>
+	T& emplace(Args&&... args) {
+		if (size == capacity) {
+			resize_inc();
+		}
+
+		std::construct_at(ptr + size, T{std::forward<Args>(args)...});
+		return ptr[size++];
 	}
 
 	void reserve(int extra_capacity) {
@@ -99,7 +148,7 @@ public:
 private:
 	void resize_inc(size_t extra_capacity = 0) {
 		if (capacity == 0) {
-			ptr = std::make_unique<T[]>(INIT_CAP);
+			ptr = alloc.allocate(INIT_CAP);
 			capacity = INIT_CAP;
 			return;
 		}
@@ -110,26 +159,28 @@ private:
 			new_capacity = capacity + extra_capacity; 
 		}
 
-		std::unique_ptr<T[]> new_ptr = std::make_unique<T[]>(new_capacity);
+		T* new_ptr = alloc.allocate(new_capacity);
 
 		for (size_t i{}; i < size; ++i) {
-			new_ptr[i] = ptr[i];
+			std::construct_at(new_ptr + i, std::move(ptr[i]));
 		}
 
-		ptr = std::move(new_ptr);
+		alloc.deallocate(ptr, capacity);
+		ptr = new_ptr;
 		new_ptr = nullptr;
 
 		capacity = new_capacity;
 	}
 
 	void resize_dec() {
-		std::unique_ptr<T[]> new_ptr = std::make_unique<T[]>(capacity >> 1);
+		T* new_ptr = alloc.allocate(capacity >> 1);
 
 		for (size_t i{}; i < size; ++i) {
-			new_ptr[i] = ptr[i];
+			std::construct_at(new_ptr + i, std::move(ptr[i]));
 		}
 
-		ptr = std::move(new_ptr);
+		alloc.deallocate(ptr, capacity);
+		ptr = new_ptr;
 		new_ptr = nullptr;
 
 		capacity >>= 1;
@@ -150,39 +201,11 @@ std::ostream& operator<<(std::ostream& out, const Vector<T>& v) {
 
 int main() {
 
-	Vector<int> v;
+	Vector<A> v;
 
-	for (int i{}; i < 64; ++i) {
-		v.push(i);
-	}
+	v.emplace(10, 2.0);
 
-	std::cout << v.getCapacity() << '\n';
-
-	std::cout << v.getSize() << '\n';
-
-	v.push(64);
-
-	std::cout << v.getCapacity() << '\n';
-
-	for (int i{}; i < 32; ++i) {
-		v.pop();
-	}
-
-	std::cout << v.getCapacity() << '\n';
-    
-	std::cout << "size " << v.getSize() << '\n';
-
-	std::cout << v.pop() << '\n';
-
-	std::cout << v.getCapacity() << '\n';
-	
-	Vector<int> v2(10);
-
-	std::cout << v2.getCapacity() << '\n';
-
-	v2.reserve(30);
-
-	std::cout << v2.getCapacity() << '\n';
+	Vector<int> v2; 
 
 	return 0;
 }
