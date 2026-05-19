@@ -1,23 +1,10 @@
+#pragma once
+
 #include <iostream>
 #include <memory>
 #include <utility>
 
 constexpr size_t INIT_CAP{64};
-
-class A {
-private:
-	int x{};
-	double y{};
-
-public:
-	A(int a, double b)
-		: x{a}, y{b}
-	{ std:: cout << "A constructed\n"; };
-
-	void print() const {
-		std::cout << "print " << x << " " << y << '\n';
-	}
-};
 
 template <typename T>
 class Vector {
@@ -38,11 +25,11 @@ public:
 		throw std::runtime_error("Cannot copy assign vector object.");
 	}
 
-	Vector(Vector&& v)
+	Vector(Vector&& v) noexcept
 		: size{v.size}, capacity{v.capacity}, ptr{v.ptr}
 	{}
 
-	void operator=(Vector&& v) {
+	void operator=(Vector&& v) noexcept {
 		size = v.size;
 		capacity = v.capacity;
 		ptr = v.ptr;
@@ -59,13 +46,21 @@ public:
 	}
 
 	Vector(std::initializer_list<T> init_list) 
-		: capacity{init_list.size()}, size{init_list.size()}
+		: size{init_list.size()}, capacity{init_list.size()}
 	{
 		ptr = alloc.allocate(capacity);
 		size_t i{};
 		for (auto p{init_list.begin()}; p != init_list.end(); ++p) {
 			std::construct_at(ptr + i++, *p);
 		}
+	}
+
+	~Vector() {
+		for (auto i{0uz}; i < size; ++i) {
+			std::destroy_at(ptr + i);
+		}
+
+		alloc.deallocate(ptr, capacity);
 	}
 
 	void push(const T& obj) {
@@ -92,13 +87,13 @@ public:
 
 		--size;
 
-		if ((size << 1) <= (capacity >> 1)) {
-			resize_dec();
-		}
-
 		T ret_elem = ptr[size];
 
 		std::destroy_at(ptr + size);
+
+		if ((size << 1) <= (capacity >> 1)) {
+			resize_dec();
+		}
 
 		return ret_elem;
 	}
@@ -109,7 +104,7 @@ public:
 			resize_inc();
 		}
 
-		std::construct_at(ptr + size, T{std::forward<Args>(args)...});
+		std::construct_at(ptr + size, std::forward<Args>(args)...);
 		return ptr[size++];
 	}
 
@@ -124,7 +119,7 @@ public:
 		if (size == 0)
 			throw std::runtime_error("Cannot peek at empty vector.");
 
-		return ptr[size];
+		return ptr[size - 1];
 	}
 
 	bool isEmpty() const {
@@ -139,9 +134,11 @@ public:
 		return capacity;
 	}
 
-	friend std::ostream& operator<<(std::ostream& out, const Vector<T>& v);
+	T& operator[](size_t index) {
+		return ptr[index];
+	}
 
-	void operator[](size_t index) {
+	const T& operator[](size_t index) const {
 		return ptr[index];
 	}
 
@@ -162,7 +159,8 @@ private:
 		T* new_ptr = alloc.allocate(new_capacity);
 
 		for (size_t i{}; i < size; ++i) {
-			std::construct_at(new_ptr + i, std::move(ptr[i]));
+			std::construct_at(new_ptr + i, std::move_if_noexcept(ptr[i]));
+			std::destroy_at(ptr + i);
 		}
 
 		alloc.deallocate(ptr, capacity);
@@ -176,7 +174,8 @@ private:
 		T* new_ptr = alloc.allocate(capacity >> 1);
 
 		for (size_t i{}; i < size; ++i) {
-			std::construct_at(new_ptr + i, std::move(ptr[i]));
+			std::construct_at(new_ptr + i, std::move_if_noexcept(ptr[i]));
+			std::destroy_at(ptr + i);
 		}
 
 		alloc.deallocate(ptr, capacity);
@@ -197,15 +196,4 @@ std::ostream& operator<<(std::ostream& out, const Vector<T>& v) {
 	out << "}";
 
 	return out;
-}
-
-int main() {
-
-	Vector<A> v;
-
-	v.emplace(10, 2.0);
-
-	Vector<int> v2; 
-
-	return 0;
 }
