@@ -57,6 +57,9 @@ public:
 	}
 
 	~Vector() {
+		if (!ptr)
+			return;
+
 		for (auto i{0uz}; i < size; ++i) {
 			std::destroy_at(ptr + i);
 		}
