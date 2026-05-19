@@ -17,22 +17,23 @@ private:
 public:
 	Vector() = default;
 
-	Vector(const Vector& v) {
-		throw std::runtime_error("Cannot copy vector object.");
-	};
+	Vector(const Vector& v) = delete;
 
-	void operator=(const Vector& v) {
-		throw std::runtime_error("Cannot copy assign vector object.");
-	}
+	void operator=(const Vector& v) = delete;
 
 	Vector(Vector&& v) noexcept
 		: size{v.size}, capacity{v.capacity}, ptr{v.ptr}
-	{}
+	{
+		v.ptr = nullptr;
+	}
 
-	void operator=(Vector&& v) noexcept {
+	Vector&& operator=(Vector&& v) noexcept {
 		size = v.size;
 		capacity = v.capacity;
 		ptr = v.ptr;
+		v.ptr = nullptr;
+
+		return std::move(*this);
 	}
 
 	Vector(int s) {
@@ -65,19 +66,25 @@ public:
 
 	void push(const T& obj) {
 		if (size == capacity) {
+			T tmp{obj};
 			resize_inc();
+			std::construct_at(ptr + size, std::move(tmp));
+		} else {
+			std::construct_at(ptr + size, obj);
 		}
 
-		std::construct_at(ptr + size, obj);
 		++size;
 	}
 
 	void push(T&& obj) {
 		if (size == capacity) {
+			T tmp{std::move(obj)};
 			resize_inc();
+			std::construct_at(ptr + size, std::move(tmp));
+		} else {
+			std::construct_at(ptr + size, std::move(obj));
 		}
 
-		std::construct_at(ptr + size, std::move(obj));
 		++size;
 	}
 
@@ -87,7 +94,7 @@ public:
 
 		--size;
 
-		T ret_elem = ptr[size];
+		T ret_elem = std::move_if_noexcept(ptr[size]);
 
 		std::destroy_at(ptr + size);
 
